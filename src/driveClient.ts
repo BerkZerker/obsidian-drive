@@ -21,6 +21,27 @@ export interface RemoteListing {
 	folders: Map<string, string>;
 }
 
+export interface DriveChange {
+	fileId: string;
+	removed: boolean;
+	file?: {
+		id: string;
+		name: string;
+		mimeType: string;
+		md5Checksum?: string;
+		modifiedTime?: string;
+		size?: string;
+		parents?: string[];
+		trashed?: boolean;
+	};
+}
+
+export interface RevisionMeta {
+	id: string;
+	modifiedTime: string;
+	size: number;
+}
+
 /**
  * Minimal Google Drive v3 client built on Obsidian's requestUrl (no CORS
  * issues, works on desktop and mobile). Token refresh is delegated to the
@@ -165,6 +186,84 @@ export class DriveClient {
 	async download(fileId: string): Promise<ArrayBuffer> {
 		const resp = await this.request({ url: `${API}/files/${fileId}?alt=media` });
 		return resp.arrayBuffer;
+	}
+
+	/** Current cursor for the Changes API; changes after this point are listable. */
+	async getStartPageToken(): Promise<string> {
+		const resp = await this.request({ url: `${API}/changes/startPageToken` });
+		return resp.json.startPageToken;
+	}
+
+	/** All changes since the given cursor, plus the cursor for next time. */
+	async listChanges(pageToken: string): Promise<{ changes: DriveChange[]; newStartPageToken: string }> {
+		const changes: DriveChange[] = [];
+		let token = pageToken;
+		let newStartPageToken = pageToken;
+		for (;;) {
+			const params = new URLSearchParams({
+				pageToken: token,
+				pageSize: "1000",
+				restrictToMyDrive: "true",
+				fields:
+					"nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, md5Checksum, modifiedTime, size, parents, trashed))",
+			});
+			const resp = await this.request({ url: `${API}/changes?${params.toString()}` });
+			changes.push(...(resp.json.changes ?? []));
+			if (resp.json.newStartPageToken) newStartPageToken = resp.json.newStartPageToken;
+			if (!resp.json.nextPageToken) break;
+			token = resp.json.nextPageToken;
+		}
+		return { changes, newStartPageToken };
+	}
+
+	async getParents(fileId: string): Promise<string[]> {
+		const resp = await this.request({ url: `${API}/files/${fileId}?fields=parents` });
+		return resp.json.parents ?? [];
+	}
+
+	/** Renames and/or moves a file — metadata only, preserves revision history. */
+	async move(fileId: string, newName: string, addParentId: string, removeParentIds: string[]): Promise<void> {
+		const params = new URLSearchParams({ fields: "id" });
+		const removals = removeParentIds.filter((p) => p !== addParentId);
+		if (removals.length) {
+			params.set("addParents", addParentId);
+			params.set("removeParents", removals.join(","));
+		}
+		await this.request({
+			url: `${API}/files/${fileId}?${params.toString()}`,
+			method: "PATCH",
+			contentType: "application/json",
+			body: JSON.stringify({ name: newName }),
+		});
+	}
+
+	/** Finds a file by exact name directly inside the given folder. */
+	async findByName(name: string, parentId: string): Promise<{ id: string } | null> {
+		const escaped = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+		const params = new URLSearchParams({
+			q: `name = '${escaped}' and '${parentId}' in parents and trashed = false`,
+			fields: "files(id)",
+		});
+		const resp = await this.request({ url: `${API}/files?${params.toString()}` });
+		return resp.json.files?.length ? { id: resp.json.files[0].id } : null;
+	}
+
+	async listRevisionMeta(fileId: string): Promise<RevisionMeta[]> {
+		const out: RevisionMeta[] = [];
+		let pageToken: string | undefined;
+		do {
+			const params = new URLSearchParams({
+				fields: "nextPageToken, revisions(id, modifiedTime, size)",
+				pageSize: "200",
+			});
+			if (pageToken) params.set("pageToken", pageToken);
+			const resp = await this.request({ url: `${API}/files/${fileId}/revisions?${params.toString()}` });
+			for (const rev of resp.json.revisions ?? []) {
+				out.push({ id: rev.id, modifiedTime: rev.modifiedTime, size: parseInt(rev.size ?? "0", 10) });
+			}
+			pageToken = resp.json.nextPageToken;
+		} while (pageToken);
+		return out;
 	}
 
 	/**

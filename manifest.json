@@ -1,7 +1,7 @@
 {
 	"id": "google-drive-sync",
 	"name": "Google Drive Sync",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"minAppVersion": "1.4.0",
 	"description": "Sync your vault with a folder in your Google Drive. Uses the drive.file scope so it can only see files it creates.",
 	"author": "BerkZerker",

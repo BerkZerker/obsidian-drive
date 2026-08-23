@@ -24,6 +24,16 @@ export interface DriveSyncSettings {
 	/** One path prefix per line; matching vault paths are never synced. */
 	ignorePatterns: string;
 	verboseNotices: boolean;
+	/** Ask before a single sync deletes this many files or more. 0 disables. */
+	deletionGuardThreshold: number;
+	/** Sync the .obsidian config folder (themes, plugins, settings). */
+	syncConfigFolder: boolean;
+	/** Config paths (relative to .obsidian) excluded from config sync. */
+	configExcludes: string;
+	/** Non-empty enables client-side AES-256-GCM encryption of file content. */
+	encryptionPassword: string;
+	/** Sync when the app window regains focus. */
+	syncOnFocus: boolean;
 }
 
 export const DEFAULT_SETTINGS: DriveSyncSettings = {
@@ -37,6 +47,11 @@ export const DEFAULT_SETTINGS: DriveSyncSettings = {
 	conflictStrategy: "smart-merge",
 	ignorePatterns: "",
 	verboseNotices: true,
+	deletionGuardThreshold: 10,
+	syncConfigFolder: false,
+	configExcludes: "workspace.json\nworkspace-mobile.json",
+	encryptionPassword: "",
+	syncOnFocus: true,
 };
 
 /** What we knew about a file the last time it was successfully synced. */
@@ -59,6 +74,14 @@ export interface PluginData {
 	state: SyncState;
 	/** Drive folder id of the vault root folder, cached across runs. */
 	baseFolderId: string | null;
+	/** Random id linking this vault to its Drive folder (wrong-vault guard). */
+	vaultId: string | null;
+	/** Per-vault PBKDF2 salt from the Drive marker file (not secret). */
+	encryptionSalt: string | null;
+	/** Drive Changes API cursor; lets no-op syncs skip the full tree listing. */
+	changesPageToken: string | null;
+	/** Directory path -> Drive folder id, persisted for fast-path uploads. */
+	folderIds: Record<string, string>;
 }
 
 export interface RemoteFile {

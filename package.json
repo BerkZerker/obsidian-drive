@@ -1,11 +1,12 @@
 {
 	"name": "google-drive-sync",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Obsidian plugin that syncs your vault with Google Drive",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"test": "node scripts/test.mjs"
 	},
 	"keywords": [
 		"obsidian",

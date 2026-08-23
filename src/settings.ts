@@ -192,6 +192,50 @@ export class DriveSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Deletion safety threshold")
+			.setDesc(
+				"Ask for confirmation before a single sync deletes this many files or more. Protects against an accidentally emptied vault wiping your Drive copy. 0 disables."
+			)
+			.addText((t) =>
+				t.setValue(String(this.plugin.data.settings.deletionGuardThreshold)).onChange(async (v) => {
+					this.plugin.data.settings.deletionGuardThreshold = Math.max(0, parseInt(v, 10) || 0);
+					await this.plugin.savePluginData();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Sync when window regains focus")
+			.setDesc("Pick up changes from other devices when you come back to Obsidian (at most once a minute).")
+			.addToggle((t) =>
+				t.setValue(this.plugin.data.settings.syncOnFocus).onChange(async (v) => {
+					this.plugin.data.settings.syncOnFocus = v;
+					await this.plugin.savePluginData();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Sync the .obsidian config folder")
+			.setDesc(
+				"Sync themes, snippets, plugins, and settings across devices. Per-device files (workspace layout) are excluded below. This plugin's own folder is never synced — it holds your Google tokens."
+			)
+			.addToggle((t) =>
+				t.setValue(this.plugin.data.settings.syncConfigFolder).onChange(async (v) => {
+					this.plugin.data.settings.syncConfigFolder = v;
+					await this.plugin.savePluginData();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Config paths to exclude")
+			.setDesc("One path per line, relative to .obsidian. Only used when config sync is on.")
+			.addTextArea((t) =>
+				t.setValue(this.plugin.data.settings.configExcludes).onChange(async (v) => {
+					this.plugin.data.settings.configExcludes = v;
+					await this.plugin.savePluginData();
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("Ignored paths")
 			.setDesc("One folder or file path per line (vault-relative). These are never uploaded or downloaded.")
 			.addTextArea((t) =>
@@ -203,6 +247,21 @@ export class DriveSyncSettingTab extends PluginSettingTab {
 						await this.plugin.savePluginData();
 					})
 			);
+
+		new Setting(containerEl).setName("Encryption").setHeading();
+
+		new Setting(containerEl)
+			.setName("Encryption password")
+			.setDesc(
+				"Non-empty enables end-to-end encryption: file content is AES-256-GCM encrypted before upload, so Google cannot read your notes (your Drive copy is no longer human-readable). Use the SAME password on every device. After enabling, run “Force re-upload of all files” to encrypt files already on Drive. If you lose the password, encrypted files on Drive are unrecoverable."
+			)
+			.addText((t) => {
+				t.inputEl.type = "password";
+				t.setValue(this.plugin.data.settings.encryptionPassword).onChange(async (v) => {
+					this.plugin.data.settings.encryptionPassword = v;
+					await this.plugin.savePluginData();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Show sync notices")
