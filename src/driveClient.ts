@@ -167,6 +167,33 @@ export class DriveClient {
 		return resp.arrayBuffer;
 	}
 
+	/**
+	 * Finds the revision whose content matches the given md5 — used to recover
+	 * the common ancestor for three-way merges. Drive keeps revisions of
+	 * app-created files for ~30 days, so this can return null for old bases.
+	 */
+	async findRevisionByMd5(fileId: string, md5: string): Promise<string | null> {
+		let pageToken: string | undefined;
+		do {
+			const params = new URLSearchParams({
+				fields: "nextPageToken, revisions(id, md5Checksum)",
+				pageSize: "200",
+			});
+			if (pageToken) params.set("pageToken", pageToken);
+			const resp = await this.request({ url: `${API}/files/${fileId}/revisions?${params.toString()}` });
+			for (const rev of resp.json.revisions ?? []) {
+				if (rev.md5Checksum === md5) return rev.id;
+			}
+			pageToken = resp.json.nextPageToken;
+		} while (pageToken);
+		return null;
+	}
+
+	async downloadRevision(fileId: string, revisionId: string): Promise<ArrayBuffer> {
+		const resp = await this.request({ url: `${API}/files/${fileId}/revisions/${revisionId}?alt=media` });
+		return resp.arrayBuffer;
+	}
+
 	async uploadNew(name: string, parentId: string, data: ArrayBuffer): Promise<{ id: string; md5: string }> {
 		const boundary = "obsidian_drive_sync_boundary";
 		const metadata = JSON.stringify({ name, parents: [parentId] });

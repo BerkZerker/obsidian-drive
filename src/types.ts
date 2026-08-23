@@ -6,7 +6,7 @@ export interface AuthTokens {
 	expiresAt: number;
 }
 
-export type ConflictStrategy = "conflict-copy" | "newest" | "prefer-local" | "prefer-remote";
+export type ConflictStrategy = "smart-merge" | "conflict-copy" | "newest" | "prefer-local" | "prefer-remote";
 
 export interface DriveSyncSettings {
 	clientId: string;
@@ -16,6 +16,10 @@ export interface DriveSyncSettings {
 	/** 0 disables automatic sync. */
 	autoSyncMinutes: number;
 	syncOnStart: boolean;
+	/** Sync shortly after files change (debounced). */
+	syncOnChange: boolean;
+	/** Seconds of quiet after the last edit before an on-change sync fires. */
+	syncOnChangeDelaySeconds: number;
 	conflictStrategy: ConflictStrategy;
 	/** One path prefix per line; matching vault paths are never synced. */
 	ignorePatterns: string;
@@ -28,7 +32,9 @@ export const DEFAULT_SETTINGS: DriveSyncSettings = {
 	driveFolderName: "Obsidian Vault",
 	autoSyncMinutes: 15,
 	syncOnStart: false,
-	conflictStrategy: "conflict-copy",
+	syncOnChange: true,
+	syncOnChangeDelaySeconds: 30,
+	conflictStrategy: "smart-merge",
 	ignorePatterns: "",
 	verboseNotices: true,
 };

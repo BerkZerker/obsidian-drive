@@ -6,7 +6,8 @@ Sync your Obsidian vault with a folder in your own Google Drive. Files are mirro
 
 - Uses the **`drive.file`** OAuth scope — the plugin can only see files *it* created. It cannot read the rest of your Drive, and Google treats this as a non-sensitive scope (no app-verification hoops for your personal OAuth client).
 - **Three-way sync**: local vault and Drive are both compared against a snapshot from the last successful sync, so the plugin can tell "created here" apart from "deleted there" instead of guessing from timestamps.
-- **Safe by default**: deletions go to the Drive trash / vault `.trash` (recoverable), and the default conflict strategy keeps *both* versions (`Note (conflict 2026-08-23 1530).md`) rather than silently overwriting.
+- **Auto-merges conflicts**: when a note changed on two devices, the plugin recovers the common ancestor from Drive's revision history and performs a git-style three-way merge, combining both sets of edits. Only when the *same lines* were edited on both sides does it fall back to keeping both versions (`Note (conflict 2026-08-23 1530).md`). Nothing is ever silently overwritten.
+- **Syncs automatically**: a debounced sync runs ~30 s after you stop editing, plus a periodic sync (default every 15 min) and optional sync-on-launch.
 - Works with **all file types** (markdown, images, PDFs, audio), on desktop and mobile (see [Mobile](#mobile)).
 
 ## Setup
@@ -43,11 +44,23 @@ The bundle contains your refresh token — treat it like a password and delete i
 
 ## How syncing works
 
+Syncs run automatically: shortly after you stop editing (debounced, configurable quiet period), on a periodic interval, optionally at launch, and on demand via the ribbon icon or the **Sync now** command.
+
 Every sync:
 
 1. Lists the Drive folder tree and your vault files.
 2. Compares both against the last-synced snapshot (stored in the plugin's `data.json`).
 3. Uploads local changes, downloads remote changes, propagates deletions, and applies your chosen conflict strategy when a file changed in both places.
+
+### Conflict handling
+
+When a file changed on both sides since the last sync, the default **Auto-merge** strategy:
+
+1. Looks up the last-synced version of the file in Drive's revision history (the common ancestor).
+2. Runs a line-based three-way merge — edits to *different* parts of the file are combined, identical edits are deduplicated.
+3. Falls back to a conflict copy only when both sides edited the same lines differently, when the file isn't text (e.g. images), or when the ancestor revision has aged out of Drive's revision history (~30 days).
+
+You can instead choose plain conflict copies, newest-wins, or always-local/always-remote in settings.
 
 Notes:
 

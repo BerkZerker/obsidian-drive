@@ -150,13 +150,35 @@ export class DriveSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Sync shortly after edits")
+			.setDesc("Automatically sync once you've stopped editing for the quiet period below.")
+			.addToggle((t) =>
+				t.setValue(this.plugin.data.settings.syncOnChange).onChange(async (v) => {
+					this.plugin.data.settings.syncOnChange = v;
+					await this.plugin.savePluginData();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Quiet period after edits (seconds)")
+			.setDesc("How long to wait after your last change before syncing. Minimum 5.")
+			.addText((t) =>
+				t.setValue(String(this.plugin.data.settings.syncOnChangeDelaySeconds)).onChange(async (v) => {
+					const n = Math.max(5, parseInt(v, 10) || 30);
+					this.plugin.data.settings.syncOnChangeDelaySeconds = n;
+					await this.plugin.savePluginData();
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("When a file changed in both places")
 			.setDesc(
-				"“Keep both” saves the remote version as a “(conflict …)” copy next to your local file — the safest option."
+				"“Auto-merge” combines both sets of edits line-by-line (like git) for text files, falling back to a conflict copy only when the same lines were edited on both sides."
 			)
 			.addDropdown((d) =>
 				d
 					.addOptions({
+						"smart-merge": "Auto-merge, conflict copy if edits overlap (recommended)",
 						"conflict-copy": "Keep both (conflict copy)",
 						newest: "Keep the newest",
 						"prefer-local": "Always keep this device's version",

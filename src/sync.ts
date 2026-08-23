@@ -1,5 +1,6 @@
 import { normalizePath, TFile, Vault } from "obsidian";
 import { DriveClient, RemoteListing } from "./driveClient";
+import { isMergeableTextPath, mergeThreeWay } from "./merge";
 import { ConflictStrategy, FileState, RemoteFile, SyncState } from "./types";
 
 export interface SyncReport {
@@ -8,6 +9,7 @@ export interface SyncReport {
 	deletedLocal: number;
 	deletedRemote: number;
 	conflicts: number;
+	merged: number;
 	skipped: number;
 	errors: string[];
 }
@@ -61,6 +63,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncReport> {
 		deletedLocal: 0,
 		deletedRemote: 0,
 		conflicts: 0,
+		merged: 0,
 		skipped: 0,
 		errors: [],
 	};
@@ -153,9 +156,57 @@ export async function runSync(opts: SyncOptions): Promise<SyncReport> {
 		report.downloaded++;
 	};
 
-	const resolveConflict = async (path: string, entry: LocalEntry, rf: RemoteFile) => {
+	const saveConflictCopy = async (path: string, entry: LocalEntry, rf: RemoteFile) => {
+		// Keep local as-is, save the remote version alongside it, then upload
+		// local so both devices end up seeing both versions.
+		const remoteData = await client.download(rf.id);
+		const copyPath = conflictCopyPath(path);
+		await writeLocalFile(copyPath, remoteData);
+		opts.onProgress?.(`Conflict on ${path} — remote version saved as ${copyPath}`);
+		await upload(path, entry, rf);
+	};
+
+	/**
+	 * Attempts a diff3 merge of a text file using the last-synced revision
+	 * (recovered from Drive's revision history) as the common ancestor.
+	 * Returns false when merging isn't possible so the caller can fall back.
+	 */
+	const trySmartMerge = async (path: string, entry: LocalEntry, rf: RemoteFile, known: FileState): Promise<boolean> => {
+		if (!isMergeableTextPath(path)) return false;
+		const revisionId = await client.findRevisionByMd5(rf.id, known.remoteMd5);
+		if (!revisionId) return false;
+
+		const decoder = new TextDecoder();
+		const baseText = decoder.decode(await client.downloadRevision(rf.id, revisionId));
+		const localText = decoder.decode((await readLocal(entry)).data);
+		const remoteText = decoder.decode(await client.download(rf.id));
+
+		const mergedText = mergeThreeWay(baseText, localText, remoteText);
+		if (mergedText === null) return false;
+
+		const mergedData = new TextEncoder().encode(mergedText).buffer as ArrayBuffer;
+		const file = await writeLocalFile(path, mergedData);
+		const uploaded = await client.uploadUpdate(rf.id, mergedData);
+		state[path] = {
+			remoteId: rf.id,
+			localHash: await sha256Hex(mergedData),
+			remoteMd5: uploaded.md5,
+			mtime: file.stat.mtime,
+			size: file.stat.size,
+		};
+		report.merged++;
+		opts.onProgress?.(`Auto-merged both edits of ${path}`);
+		return true;
+	};
+
+	const resolveConflict = async (path: string, entry: LocalEntry, rf: RemoteFile, known?: FileState) => {
 		report.conflicts++;
 		switch (opts.conflictStrategy) {
+			case "smart-merge": {
+				if (known && (await trySmartMerge(path, entry, rf, known))) break;
+				await saveConflictCopy(path, entry, rf);
+				break;
+			}
 			case "prefer-local":
 				await upload(path, entry, rf);
 				break;
@@ -166,16 +217,9 @@ export async function runSync(opts: SyncOptions): Promise<SyncReport> {
 				if (entry.file.stat.mtime >= rf.modifiedTime) await upload(path, entry, rf);
 				else await download(path, rf);
 				break;
-			case "conflict-copy": {
-				// Keep local as-is, save the remote version alongside it, then
-				// upload local so both devices end up seeing both versions.
-				const remoteData = await client.download(rf.id);
-				const copyPath = conflictCopyPath(path);
-				await writeLocalFile(copyPath, remoteData);
-				opts.onProgress?.(`Conflict on ${path} — remote version saved as ${copyPath}`);
-				await upload(path, entry, rf);
+			case "conflict-copy":
+				await saveConflictCopy(path, entry, rf);
 				break;
-			}
 		}
 	};
 
@@ -214,7 +258,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncReport> {
 				}
 				const lChanged = await localChanged(entry, known);
 				const rChanged = rf.md5 !== known.remoteMd5;
-				if (lChanged && rChanged) await resolveConflict(path, entry, rf);
+				if (lChanged && rChanged) await resolveConflict(path, entry, rf, known);
 				else if (lChanged) await upload(path, entry, rf);
 				else if (rChanged) await download(path, rf);
 				else {

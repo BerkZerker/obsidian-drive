@@ -10,6 +10,7 @@ export default class DriveSyncPlugin extends Plugin {
 	private client: DriveClient | null = null;
 	private syncing = false;
 	private autoSyncTimer: number | null = null;
+	private changeTimer: number | null = null;
 	private statusBar: HTMLElement | null = null;
 
 	async onload() {
@@ -38,14 +39,33 @@ export default class DriveSyncPlugin extends Plugin {
 		});
 
 		this.restartAutoSync();
-		if (this.data.settings.syncOnStart) {
-			// Wait for the workspace (and file index) to be ready.
-			this.app.workspace.onLayoutReady(() => void this.syncNow());
-		}
+		this.app.workspace.onLayoutReady(() => {
+			if (this.data.settings.syncOnStart) void this.syncNow();
+			// Registered after layout-ready so the initial vault index (which
+			// fires a create event per file) doesn't trigger a sync.
+			const onChange = () => this.scheduleChangeSync();
+			this.registerEvent(this.app.vault.on("create", onChange));
+			this.registerEvent(this.app.vault.on("modify", onChange));
+			this.registerEvent(this.app.vault.on("delete", onChange));
+			this.registerEvent(this.app.vault.on("rename", onChange));
+		});
 	}
 
 	onunload() {
 		if (this.autoSyncTimer !== null) window.clearInterval(this.autoSyncTimer);
+		if (this.changeTimer !== null) window.clearTimeout(this.changeTimer);
+	}
+
+	/** Debounced sync after edits: waits for a quiet period, then syncs. */
+	private scheduleChangeSync() {
+		if (!this.data.settings.syncOnChange || !this.data.tokens) return;
+		if (this.syncing) return; // ignore events caused by the sync itself
+		if (this.changeTimer !== null) window.clearTimeout(this.changeTimer);
+		const delay = Math.max(5, this.data.settings.syncOnChangeDelaySeconds) * 1000;
+		this.changeTimer = window.setTimeout(() => {
+			this.changeTimer = null;
+			void this.syncNow(true);
+		}, delay);
 	}
 
 	getClient(): DriveClient {
@@ -148,7 +168,9 @@ export default class DriveSyncPlugin extends Plugin {
 		if (report.downloaded) parts.push(`${report.downloaded} downloaded`);
 		if (report.deletedLocal) parts.push(`${report.deletedLocal} removed locally`);
 		if (report.deletedRemote) parts.push(`${report.deletedRemote} removed on Drive`);
-		if (report.conflicts) parts.push(`${report.conflicts} conflict(s)`);
+		if (report.merged) parts.push(`${report.merged} auto-merged`);
+		const unresolved = report.conflicts - report.merged;
+		if (unresolved > 0) parts.push(`${unresolved} conflict(s)`);
 		new Notice(parts.length ? `Drive sync: ${parts.join(", ")}` : "Drive sync: everything up to date");
 	}
 
