@@ -6,7 +6,7 @@ Sync your Obsidian vault with a folder in your own Google Drive. Files are mirro
 
 - Uses the **`drive.file`** OAuth scope — the plugin can only see files *it* created. It cannot read the rest of your Drive, and Google treats this as a non-sensitive scope (no app-verification hoops for your personal OAuth client).
 - **Auto-merges conflicts**: when a note changed on two devices, the plugin recovers the common ancestor from Drive's revision history and performs a git-style three-way merge, combining both sets of edits. Only when the *same lines* were edited on both sides does it fall back to keeping both versions (`Note (conflict 2026-08-23 1530).md`). Nothing is ever silently overwritten.
-- **Syncs automatically**: a debounced sync runs ~30 s after you stop editing, plus sync on window focus, a periodic sync (default every 15 min), and optional sync-on-launch.
+- **Syncs automatically**: a debounced sync runs ~30 s after you stop editing (capped so a long editing session still syncs every couple of minutes), unsynced edits are pushed **immediately when you switch away** from Obsidian or background the app on mobile, and changes from other devices are pulled on launch, on window focus/app resume, and by a periodic sync (default every 15 min). Edits made while a sync is running are picked up by a follow-up sync, and failed automatic syncs (e.g. offline) are retried with backoff.
 - **Fast**: steady-state syncs use the Drive Changes API to skip listing the whole remote tree, transfers run 4-way parallel, and renames/moves are detected and applied as metadata-only operations (no re-upload, revision history preserved).
 - **Safe**: a mass-deletion guard asks before a single sync deletes many files, a vault marker prevents two different vaults from clobbering the same Drive folder, deletions go to trash on both sides, and a dry-run command previews exactly what a sync would do.
 - **Optional end-to-end encryption** (AES-256-GCM) so Google cannot read your notes.
@@ -57,7 +57,7 @@ The bundle contains your refresh token — treat it like a password and delete i
 
 ## How syncing works
 
-Syncs run automatically: shortly after you stop editing (debounced, configurable quiet period), when the window regains focus, on a periodic interval, optionally at launch, and on demand via the ribbon icon or the **Sync now** command.
+Syncs run automatically: shortly after you stop editing (debounced, configurable quiet period, capped so continuous editing can't postpone it forever), immediately when the app loses focus or is backgrounded (so mobile edits are pushed before the OS suspends the app), when the window regains focus or the app resumes, on a periodic interval, at launch (on by default), and on demand via the ribbon icon or the **Sync now** command. Edits made while a sync is in flight trigger a follow-up sync, and a failed automatic sync is retried with exponential backoff.
 
 Every sync:
 

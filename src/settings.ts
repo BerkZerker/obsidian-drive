@@ -142,6 +142,7 @@ export class DriveSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Sync when Obsidian starts")
+			.setDesc("Pull the latest changes from Drive as soon as the app launches.")
 			.addToggle((t) =>
 				t.setValue(this.plugin.data.settings.syncOnStart).onChange(async (v) => {
 					this.plugin.data.settings.syncOnStart = v;
@@ -151,7 +152,9 @@ export class DriveSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Sync shortly after edits")
-			.setDesc("Automatically sync once you've stopped editing for the quiet period below.")
+			.setDesc(
+				"Automatically sync once you've stopped editing for the quiet period below — and immediately when you switch away from Obsidian or background the app. Long editing sessions can't postpone it indefinitely, and failed syncs are retried."
+			)
 			.addToggle((t) =>
 				t.setValue(this.plugin.data.settings.syncOnChange).onChange(async (v) => {
 					this.plugin.data.settings.syncOnChange = v;

@@ -41,7 +41,7 @@ export const DEFAULT_SETTINGS: DriveSyncSettings = {
 	clientSecret: "",
 	driveFolderName: "Obsidian Vault",
 	autoSyncMinutes: 15,
-	syncOnStart: false,
+	syncOnStart: true,
 	syncOnChange: true,
 	syncOnChangeDelaySeconds: 30,
 	conflictStrategy: "smart-merge",
