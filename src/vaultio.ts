@@ -12,8 +12,12 @@ export interface LocalMeta {
  * Obsidian's Vault API doesn't index and must be reached via the adapter.
  */
 export class VaultIO {
-	/** The plugin's own config subfolder — never synced (contains OAuth tokens). */
-	static readonly SELF_EXCLUDE = "plugins/google-drive-sync";
+	/**
+	 * The plugin's own data file — never synced (holds OAuth tokens and
+	 * per-device sync state). The plugin's code files DO sync, so updating
+	 * the plugin on one device propagates it to the others.
+	 */
+	static readonly SELF_EXCLUDE = "plugins/google-drive-sync/data.json";
 
 	constructor(private app: App) {}
 

@@ -28,11 +28,22 @@ Your vault appears in Drive under the folder named in settings (default: `Obsidi
 
 ## Installing the plugin
 
-Until this is in the community plugin directory, install manually:
+Until this is in the community plugin directory, install manually. The built `main.js` is committed, so no build step is needed — just put these two files into `<your vault>/.obsidian/plugins/google-drive-sync/`:
 
-1. Run `npm install && npm run build` in this repo.
-2. Copy `manifest.json` and `main.js` into `<your vault>/.obsidian/plugins/google-drive-sync/`.
-3. Enable **Google Drive Sync** in *Settings → Community plugins*.
+- `https://raw.githubusercontent.com/BerkZerker/obsidian-drive/main/manifest.json`
+- `https://raw.githubusercontent.com/BerkZerker/obsidian-drive/main/main.js`
+
+On macOS/Linux, from the vault folder:
+
+```bash
+mkdir -p .obsidian/plugins/google-drive-sync && cd .obsidian/plugins/google-drive-sync
+curl -LO https://raw.githubusercontent.com/BerkZerker/obsidian-drive/main/manifest.json
+curl -LO https://raw.githubusercontent.com/BerkZerker/obsidian-drive/main/main.js
+```
+
+On Android, download the two files with your browser, then use the Files app to move them into `<vault>/.obsidian/plugins/google-drive-sync/` (create the folders if needed; Obsidian vaults usually live in `Documents/`or wherever you created the vault).
+
+Then restart Obsidian and enable **Google Drive Sync** in *Settings → Community plugins* (turn on community plugins if prompted). Once config-folder sync is enabled, plugin updates installed on one device propagate to the others automatically.
 
 ## Mobile
 
@@ -88,7 +99,7 @@ Set an **encryption password** in settings to encrypt file *content* with AES-25
 
 ### Config folder sync
 
-Optionally sync `.obsidian` (themes, snippets, community plugins, settings) across devices. Per-device files like `workspace.json` are excluded by default and the exclusion list is editable. This plugin's own folder is **always** excluded — it contains your Google tokens and per-device sync state. After config changes arrive from another device, reload Obsidian to apply them.
+Optionally sync `.obsidian` (themes, snippets, community plugins, settings) across devices. Per-device files like `workspace.json` are excluded by default and the exclusion list is editable. This plugin's own `data.json` is **always** excluded — it contains your Google tokens and per-device sync state — while its code files do sync, so updating the plugin on one device propagates it everywhere. After config changes arrive from another device, reload Obsidian to apply them.
 
 ### Other notes
 

@@ -216,7 +216,7 @@ export class DriveSyncSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Sync the .obsidian config folder")
 			.setDesc(
-				"Sync themes, snippets, plugins, and settings across devices. Per-device files (workspace layout) are excluded below. This plugin's own folder is never synced — it holds your Google tokens."
+				"Sync themes, snippets, plugins, and settings across devices. Per-device files (workspace layout) are excluded below. This plugin's own data.json is never synced — it holds your Google tokens."
 			)
 			.addToggle((t) =>
 				t.setValue(this.plugin.data.settings.syncConfigFolder).onChange(async (v) => {
