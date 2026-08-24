@@ -778,13 +778,15 @@ var DriveSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         this.plugin.restartAutoSync();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Sync when Obsidian starts").addToggle(
+    new import_obsidian4.Setting(containerEl).setName("Sync when Obsidian starts").setDesc("Pull the latest changes from Drive as soon as the app launches.").addToggle(
       (t) => t.setValue(this.plugin.data.settings.syncOnStart).onChange(async (v) => {
         this.plugin.data.settings.syncOnStart = v;
         await this.plugin.savePluginData();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Sync shortly after edits").setDesc("Automatically sync once you've stopped editing for the quiet period below.").addToggle(
+    new import_obsidian4.Setting(containerEl).setName("Sync shortly after edits").setDesc(
+      "Automatically sync once you've stopped editing for the quiet period below \u2014 and immediately when you switch away from Obsidian or background the app. Long editing sessions can't postpone it indefinitely, and failed syncs are retried."
+    ).addToggle(
       (t) => t.setValue(this.plugin.data.settings.syncOnChange).onChange(async (v) => {
         this.plugin.data.settings.syncOnChange = v;
         await this.plugin.savePluginData();
@@ -1557,7 +1559,7 @@ var DEFAULT_SETTINGS = {
   clientSecret: "",
   driveFolderName: "Obsidian Vault",
   autoSyncMinutes: 15,
-  syncOnStart: false,
+  syncOnStart: true,
   syncOnChange: true,
   syncOnChangeDelaySeconds: 30,
   conflictStrategy: "smart-merge",
@@ -1696,6 +1698,12 @@ var DriveSyncPlugin = class extends import_obsidian6.Plugin {
     this.lastSyncEnd = 0;
     this.autoSyncTimer = null;
     this.changeTimer = null;
+    /** Set on every vault event; cleared when a sync starts. Edits made while a
+     *  sync is running set it again so a follow-up sync picks them up. */
+    this.pendingChanges = false;
+    /** When the oldest not-yet-synced edit happened; bounds the debounce. */
+    this.firstPendingChangeAt = null;
+    this.autoSyncFailures = 0;
     this.statusBar = null;
   }
   emptyData() {
@@ -1763,9 +1771,15 @@ var DriveSyncPlugin = class extends import_obsidian6.Plugin {
       this.registerEvent(this.app.vault.on("modify", onChange));
       this.registerEvent(this.app.vault.on("delete", onChange));
       this.registerEvent(this.app.vault.on("rename", onChange));
-      this.registerDomEvent(window, "focus", () => {
+      const syncOnResume = () => {
         if (!this.data.settings.syncOnFocus) return;
         if (Date.now() - this.lastSyncEnd > 6e4) void this.syncNow(true);
+      };
+      this.registerDomEvent(window, "focus", syncOnResume);
+      this.registerDomEvent(window, "blur", () => this.flushPendingChanges());
+      this.registerDomEvent(document, "visibilitychange", () => {
+        if (document.hidden) this.flushPendingChanges();
+        else syncOnResume();
       });
     });
   }
@@ -1805,12 +1819,44 @@ var DriveSyncPlugin = class extends import_obsidian6.Plugin {
       this.registerInterval(this.autoSyncTimer);
     }
   }
+  quietPeriodMs() {
+    return Math.max(5, this.data.settings.syncOnChangeDelaySeconds) * 1e3;
+  }
   /** Debounced sync after edits: waits for a quiet period, then syncs. */
   scheduleChangeSync() {
     if (!this.data.settings.syncOnChange || !this.data.tokens) return;
+    this.pendingChanges = true;
     if (this.syncing) return;
+    const now = Date.now();
+    if (this.firstPendingChangeAt === null) this.firstPendingChangeAt = now;
+    const quiet = this.quietPeriodMs();
+    const maxWait = Math.max(4 * quiet, 6e4);
+    const delay = Math.min(quiet, Math.max(this.firstPendingChangeAt + maxWait - now, 1e3));
     if (this.changeTimer !== null) window.clearTimeout(this.changeTimer);
-    const delay = Math.max(5, this.data.settings.syncOnChangeDelaySeconds) * 1e3;
+    this.changeTimer = window.setTimeout(() => {
+      this.changeTimer = null;
+      void this.syncNow(true);
+    }, delay);
+  }
+  /** Sync unsynced edits right now, skipping the quiet period. Called when the
+   *  app loses focus or is backgrounded: timers may never fire after that. */
+  flushPendingChanges() {
+    if (!this.pendingChanges || this.syncing) return;
+    if (!this.data.settings.syncOnChange || !this.data.tokens) return;
+    if (this.changeTimer !== null) {
+      window.clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+    }
+    void this.syncNow(true);
+  }
+  /** After a sync: re-run for edits made while it was in flight, or retry a
+   *  failure with backoff (offline, token hiccup) so edits aren't stranded
+   *  until the next periodic sync. */
+  scheduleFollowUpSync(afterFailure) {
+    if (!this.data.settings.syncOnChange || !this.data.tokens) return;
+    if (this.changeTimer !== null) return;
+    const quiet = this.quietPeriodMs();
+    const delay = afterFailure ? Math.min(quiet * 2 ** Math.min(this.autoSyncFailures, 6), 10 * 6e4) : quiet;
     this.changeTimer = window.setTimeout(() => {
       this.changeTimer = null;
       void this.syncNow(true);
@@ -1859,20 +1905,32 @@ var DriveSyncPlugin = class extends import_obsidian6.Plugin {
       return;
     }
     this.syncing = true;
+    if (this.changeTimer !== null) {
+      window.clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+    }
+    this.pendingChanges = false;
+    this.firstPendingChangeAt = null;
     this.setStatus("Drive: syncing\u2026");
     this.log.add(background ? "Sync started (automatic)" : "Sync started (manual)");
+    let failed = false;
     try {
       const report = await performSync(this.buildContext(), this.buildRunOptions());
       this.reportResult(report, background);
+      this.autoSyncFailures = 0;
     } catch (e) {
+      failed = true;
+      this.autoSyncFailures++;
       const msg = e instanceof Error ? e.message : String(e);
-      new import_obsidian6.Notice(`Drive sync failed: ${msg}`, 1e4);
+      if (!background || this.autoSyncFailures <= 1) new import_obsidian6.Notice(`Drive sync failed: ${msg}`, 1e4);
       this.log.add(`Sync failed: ${msg}`);
       console.error("[google-drive-sync]", e);
     } finally {
       this.syncing = false;
       this.lastSyncEnd = Date.now();
-      this.setStatus(`Drive: last sync ${(/* @__PURE__ */ new Date()).toLocaleTimeString()}`);
+      this.setStatus(failed ? "Drive: sync failed" : `Drive: last sync ${(/* @__PURE__ */ new Date()).toLocaleTimeString()}`);
+      if (failed) this.pendingChanges = true;
+      if (this.pendingChanges) this.scheduleFollowUpSync(failed);
     }
   }
   async previewSync() {
